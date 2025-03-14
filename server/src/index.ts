@@ -189,91 +189,127 @@ const draftsHandler: RequestHandler = async (req, res, next) => {
     const accessToken = authHeader.split(' ')[1];
     const gmail = getGmailClient(accessToken);
     
-    console.log('Fetching drafts');
-    const response = await gmail.users.drafts.list({
-      userId: 'me',
-      maxResults: 20,
-      pageToken: req.query.pageToken as string | undefined,
-      q: req.query.search as string | undefined
+    console.log('[DEBUG] Fetching drafts with params:', {
+      pageToken: req.query.pageToken,
+      search: req.query.search
     });
 
-    if (!response.data || !response.data.drafts) {
-      console.log('No drafts found');
-      res.json({
-        emails: [],
-        nextPageToken: undefined,
-        resultSizeEstimate: 0
+    try {
+      const response = await gmail.users.drafts.list({
+        userId: 'me',
+        maxResults: 20,
+        pageToken: req.query.pageToken as string | undefined,
+        q: req.query.search as string | undefined
       });
-      return;
-    }
 
-    console.log('Gmail API drafts response:', response.data);
-
-    const drafts = response.data.drafts;
-    const draftPromises = drafts.map(async (draft: any) => {
-      try {
-        if (!draft.id) {
-          console.log('Draft has no ID');
-          return null;
-        }
-
-        console.log('\nFetching draft:', draft.id);
-        const draftData = await gmail.users.drafts.get({
-          userId: 'me',
-          id: draft.id
+      if (!response.data) {
+        console.log('[DEBUG] No response data from Gmail API');
+        res.json({
+          emails: [],
+          nextPageToken: undefined,
+          resultSizeEstimate: 0
         });
-
-        if (!draftData.data || !draftData.data.message) {
-          console.log('No message found in draft');
-          return null;
-        }
-
-        const message = draftData.data.message;
-        if (!message.payload || !message.payload.headers) {
-          console.log('No payload or headers found in draft message');
-          return null;
-        }
-
-        const headers = message.payload.headers;
-        const subject = headers.find((h: any) => h.name === 'Subject')?.value || '(no subject)';
-        const from = headers.find((h: any) => h.name === 'From')?.value || '';
-        const to = headers.find((h: any) => h.name === 'To')?.value || '';
-        const date = headers.find((h: any) => h.name === 'Date')?.value || '';
-
-        const body = getMessageBody(message.payload);
-
-        const email: EmailMessage = {
-          id: draft.id,
-          threadId: message.threadId || '',
-          subject,
-          from,
-          to,
-          date,
-          snippet: message.snippet || '',
-          body: body || message.snippet || '',
-          label: 'draft'
-        };
-        console.log('Processed draft:', { id: email.id, subject: email.subject });
-        return email;
-      } catch (error) {
-        console.error('Error fetching draft content:', error);
-        return null;
+        return;
       }
-    });
 
-    const draftEmails = (await Promise.all(draftPromises)).filter((email): email is EmailMessage => {
-      return email !== null;
-    });
-    
-    console.log(`Successfully processed ${draftEmails.length} drafts`);
-    res.json({
-      emails: draftEmails,
-      nextPageToken: response.data.nextPageToken,
-      resultSizeEstimate: response.data.resultSizeEstimate || draftEmails.length
-    });
+      if (!response.data.drafts) {
+        console.log('[DEBUG] No drafts found in response');
+        res.json({
+          emails: [],
+          nextPageToken: response.data.nextPageToken,
+          resultSizeEstimate: 0
+        });
+        return;
+      }
+
+      console.log('[DEBUG] Gmail API drafts response:', {
+        count: response.data.drafts.length,
+        nextPageToken: response.data.nextPageToken,
+        resultSizeEstimate: response.data.resultSizeEstimate
+      });
+
+      const drafts = response.data.drafts;
+      const draftPromises = drafts.map(async (draft: any) => {
+        try {
+          if (!draft.id) {
+            console.log('[DEBUG] Draft has no ID');
+            return null;
+          }
+
+          console.log('[DEBUG] Fetching draft:', draft.id);
+          const draftData = await gmail.users.drafts.get({
+            userId: 'me',
+            id: draft.id,
+            format: 'full'
+          });
+
+          if (!draftData.data || !draftData.data.message) {
+            console.log('[DEBUG] No message found in draft:', draft.id);
+            return null;
+          }
+
+          const message = draftData.data.message;
+          if (!message.payload) {
+            console.log('[DEBUG] No payload found in draft message:', draft.id);
+            return null;
+          }
+
+          const headers = message.payload.headers || [];
+          const subject = headers.find((h: any) => h.name === 'Subject')?.value || '(no subject)';
+          const from = headers.find((h: any) => h.name === 'From')?.value || '';
+          const to = headers.find((h: any) => h.name === 'To')?.value || '';
+          const date = headers.find((h: any) => h.name === 'Date')?.value || '';
+
+          const body = getMessageBody(message.payload);
+
+          const email: EmailMessage = {
+            id: draft.id,
+            threadId: message.threadId || '',
+            subject,
+            from,
+            to,
+            date,
+            snippet: message.snippet || '',
+            body: body || message.snippet || '',
+            label: 'draft'
+          };
+          console.log('[DEBUG] Processed draft:', { id: email.id, subject: email.subject });
+          return email;
+        } catch (error) {
+          console.error('[DEBUG] Error fetching draft content:', {
+            draftId: draft.id,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          return null;
+        }
+      });
+
+      const draftEmails = (await Promise.all(draftPromises)).filter((email): email is EmailMessage => {
+        return email !== null;
+      });
+      
+      console.log(`[DEBUG] Successfully processed ${draftEmails.length} drafts`);
+      res.json({
+        emails: draftEmails,
+        nextPageToken: response.data.nextPageToken,
+        resultSizeEstimate: response.data.resultSizeEstimate || draftEmails.length
+      });
+    } catch (error) {
+      console.error('[DEBUG] Error in Gmail API call:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
+    }
   } catch (error) {
-    console.error('Error in drafts route:', error);
-    res.status(500).json({ error: 'Failed to fetch drafts' });
+    console.error('[DEBUG] Error in drafts route:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    res.status(500).json({ 
+      error: 'Failed to fetch drafts',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 
@@ -458,18 +494,38 @@ const saveDraftHandler: RequestHandler = async (req, res) => {
     const { to, subject, content } = req.body;
     const gmail = getGmailClient(accessToken);
 
+    console.log('[DEBUG] Saving draft with:', { to, subject, contentLength: content.length });
+
+    // Create email with both HTML and plain text parts
+    const boundary = 'boundary_' + Date.now().toString();
     const message = [
-      'Content-Type: text/plain; charset="UTF-8"\n',
       'MIME-Version: 1.0\n',
+      'Content-Type: multipart/alternative; boundary=' + boundary + '\n',
+      to ? `To: ${to}\n` : '',
+      `Subject: ${subject}\n`,
+      '\n',
+      '--' + boundary + '\n',
+      'Content-Type: text/plain; charset=UTF-8\n',
       'Content-Transfer-Encoding: 7bit\n',
-      `To: ${to}\n`,
-      `Subject: ${subject}\n\n`,
+      '\n',
+      content.replace(/<[^>]*>/g, ''), // Strip HTML for plain text version
+      '\n\n',
+      '--' + boundary + '\n',
+      'Content-Type: text/html; charset=UTF-8\n',
+      'Content-Transfer-Encoding: 7bit\n',
+      '\n',
       content,
+      '\n\n',
+      '--' + boundary + '--',
     ].join('');
 
-    const encodedMessage = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const encodedMessage = Buffer.from(message).toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
 
-    await gmail.users.drafts.create({
+    console.log('[DEBUG] Creating draft...');
+    const response = await gmail.users.drafts.create({
       userId: 'me',
       requestBody: {
         message: {
@@ -478,10 +534,79 @@ const saveDraftHandler: RequestHandler = async (req, res) => {
       },
     });
 
-    res.json({ success: true });
+    console.log('[DEBUG] Draft created successfully:', response.data);
+    res.json({ success: true, draftId: response.data.id });
   } catch (error) {
-    console.error('Error saving draft:', error);
-    res.status(500).json({ error: 'Failed to save draft' });
+    console.error('[DEBUG] Error saving draft:', error);
+    res.status(500).json({ 
+      error: 'Failed to save draft',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+const updateDraftHandler: RequestHandler = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'No token provided' });
+      return;
+    }
+
+    const accessToken = authHeader.split(' ')[1];
+    const { to, subject, content } = req.body;
+    const draftId = req.params.id;
+    const gmail = getGmailClient(accessToken);
+
+    console.log('[DEBUG] Updating draft:', { id: draftId, to, subject, contentLength: content.length });
+
+    // Create email with both HTML and plain text parts
+    const boundary = 'boundary_' + Date.now().toString();
+    const message = [
+      'MIME-Version: 1.0\n',
+      'Content-Type: multipart/alternative; boundary=' + boundary + '\n',
+      to ? `To: ${to}\n` : '',
+      `Subject: ${subject}\n`,
+      '\n',
+      '--' + boundary + '\n',
+      'Content-Type: text/plain; charset=UTF-8\n',
+      'Content-Transfer-Encoding: 7bit\n',
+      '\n',
+      content.replace(/<[^>]*>/g, ''), // Strip HTML for plain text version
+      '\n\n',
+      '--' + boundary + '\n',
+      'Content-Type: text/html; charset=UTF-8\n',
+      'Content-Transfer-Encoding: 7bit\n',
+      '\n',
+      content,
+      '\n\n',
+      '--' + boundary + '--',
+    ].join('');
+
+    const encodedMessage = Buffer.from(message).toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    console.log('[DEBUG] Updating draft...');
+    const response = await gmail.users.drafts.update({
+      userId: 'me',
+      id: draftId,
+      requestBody: {
+        message: {
+          raw: encodedMessage,
+        },
+      },
+    });
+
+    console.log('[DEBUG] Draft updated successfully:', response.data);
+    res.json({ success: true, draftId: response.data.id });
+  } catch (error) {
+    console.error('[DEBUG] Error updating draft:', error);
+    res.status(500).json({ 
+      error: 'Failed to update draft',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 
@@ -512,9 +637,10 @@ router.get('/emails/drafts', draftsHandler);
 router.get('/emails', emailsHandler);
 router.post('/emails/send', sendEmailHandler);
 router.post('/emails/draft', saveDraftHandler);
+router.put('/emails/draft/:id', updateDraftHandler);
 router.get('/debug/routes', debugRoutesHandler);
 
-// Mount the router first
+// Mount the router with /api prefix
 app.use('/api', router);
 
 // 404 handler
@@ -525,17 +651,19 @@ app.use((req: Request, res: Response) => {
     baseUrl: req.baseUrl,
     path: req.path
   });
+
+  // Get all routes
+  const routes = router.stack
+    .filter((layer: any) => layer.route)
+    .map((layer: any) => ({
+      path: '/api' + layer.route.path,
+      methods: Object.keys(layer.route.methods)
+    }));
+
   res.status(404).json({ 
     error: 'Not Found',
     requestedPath: req.originalUrl,
-    availableRoutes: router.stack
-      .filter((r: ILayer): r is ILayer & { route: IRoute & { methods: Record<string, boolean> } } => 
-        r.route !== undefined
-      )
-      .map(r => ({
-        path: '/api' + r.route.path,
-        methods: Object.keys(r.route.methods)
-      }))
+    availableRoutes: routes
   });
 });
 

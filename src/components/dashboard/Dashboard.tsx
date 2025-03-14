@@ -8,6 +8,7 @@ import { EmailView } from "./EmailView"
 import { EmailComposer } from "./EmailComposer"
 import { useEmail } from "@/lib/EmailContext"
 import { useDebounce } from "@/lib/hooks"
+import { EmailMessage } from "@/lib/gmail"
 
 export type EmailView = 'inbox' | 'sent' | 'drafts';
 
@@ -21,6 +22,7 @@ export function Dashboard() {
   const [pageToken, setPageToken] = useState<string | undefined>(undefined)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [draftToEdit, setDraftToEdit] = useState<EmailMessage | null>(null)
 
   const debouncedSearch = useDebounce(searchQuery, 300)
 
@@ -67,8 +69,32 @@ export function Dashboard() {
     setViewState("composing")
   }
 
+  const handleEmailSelect = (email: EmailMessage) => {
+    // If we're in composing state, save any current draft before switching
+    if (viewState === "composing") {
+      handleCloseCompose();
+    }
+
+    setSelectedEmail(email);
+    
+    // If in drafts view, open the draft for editing
+    if (currentView === 'drafts') {
+      setDraftToEdit(email);
+      setViewState("composing");
+    } else {
+      // For regular emails, switch to reading view
+      setViewState("reading");
+      setDraftToEdit(null);
+    }
+  }
+
   const handleCloseCompose = () => {
-    setViewState("reading")
+    // Save any changes before closing
+    if (draftToEdit) {
+      setSelectedEmail(draftToEdit);
+    }
+    setViewState("reading");
+    setDraftToEdit(null);
   }
 
   const handleSendEmail = async (email: { to: string; subject: string; content: string }) => {
@@ -119,6 +145,22 @@ export function Dashboard() {
 
   const currentEmails = getCurrentEmails()
 
+  const handleComposeToEmail = (email: string) => {
+    setSelectedEmail(null);
+    setViewState("composing");
+    setDraftToEdit({
+      id: '',
+      threadId: '',
+      subject: '',
+      from: '',
+      to: email,
+      date: new Date().toISOString(),
+      snippet: '',
+      body: '',
+      label: 'draft'
+    });
+  };
+
   if (loading && !loadingMore) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -142,7 +184,7 @@ export function Dashboard() {
         currentView={currentView}
         onViewChange={handleViewChange}
       />
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col bg-white dark:bg-stone-900">
         {/* Only show TabBar for inbox view */}
         {currentView === 'inbox' && (
           <TabBar 
@@ -156,7 +198,7 @@ export function Dashboard() {
           <EmailList 
             emails={currentEmails}
             selectedEmail={selectedEmail}
-            onEmailSelect={setSelectedEmail}
+            onEmailSelect={handleEmailSelect}
             loading={loadingMore}
             hasMore={hasMore}
             onLoadMore={handleLoadMore}
@@ -164,12 +206,17 @@ export function Dashboard() {
           />
           <div className="flex-1">
             {viewState === "reading" ? (
-              selectedEmail && <EmailView email={selectedEmail} />
+              selectedEmail && <EmailView 
+                email={selectedEmail} 
+                onSend={handleSendEmail}
+                onCompose={handleComposeToEmail}
+              />
             ) : (
               <EmailComposer 
                 onClose={handleCloseCompose}
                 onSend={handleSendEmail}
                 sending={sendingEmail}
+                existingDraft={draftToEdit || undefined}
               />
             )}
           </div>

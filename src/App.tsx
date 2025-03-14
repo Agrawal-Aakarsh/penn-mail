@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './components/auth/AuthProvider'
 import { LoginPage } from './components/auth/LoginPage'
 import { Dashboard } from './components/dashboard/Dashboard'
 import { EmailProvider } from './lib/EmailContext'
+import { ThemeProvider } from './components/ThemeProvider'
 
 function AppContent() {
   const { isAuthenticated, accessToken, login } = useAuth();
@@ -28,9 +29,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

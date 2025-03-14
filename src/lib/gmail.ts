@@ -17,16 +17,22 @@ export interface EmailResponse {
   resultSizeEstimate?: number;
 }
 
+interface DraftResponse {
+  success: boolean;
+  draftId: string;
+}
+
 export default class GmailService {
   private accessToken: string;
-  private baseUrl = 'http://localhost:3001/api';
+  private baseUrl = 'http://localhost:3001';
 
   constructor(accessToken: string) {
     this.accessToken = accessToken;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    console.log('Making request to:', `${this.baseUrl}/api${endpoint}`);
+    const response = await fetch(`${this.baseUrl}/api${endpoint}`, {
       ...options,
       headers: {
         ...options.headers,
@@ -35,7 +41,8 @@ export default class GmailService {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
     }
 
     return response.json();
@@ -51,6 +58,9 @@ export default class GmailService {
       ...(options?.search && { search: options.search })
     });
 
+    if (label === 'draft') {
+      return this.request<EmailResponse>(`/emails/drafts?${queryParams}`);
+    }
     return this.request<EmailResponse>(`/emails?${queryParams}`);
   }
 
@@ -65,7 +75,7 @@ export default class GmailService {
 
   async sendEmail(to: string, subject: string, content: string): Promise<boolean> {
     try {
-      await this.request('/send', {
+      await this.request('/emails/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -79,16 +89,27 @@ export default class GmailService {
     }
   }
 
-  async saveDraft(to: string, subject: string, content: string): Promise<boolean> {
-    try {
-      await this.request('/emails/draft', {
-        method: 'POST',
-        body: JSON.stringify({ to, subject, content }),
-      });
-      return true;
-    } catch (error) {
-      console.error('Error saving draft:', error);
-      return false;
-    }
+  async saveDraft(to: string, subject: string, content: string): Promise<string> {
+    const response = await this.request('/emails/draft', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ to, subject, content }),
+    }) as DraftResponse;
+    return response.draftId;
+  }
+
+  async updateDraft(draftId: string, to: string, subject: string, content: string): Promise<string> {
+    console.log('Updating draft:', { draftId, to, subject, contentLength: content.length });
+    const cleanDraftId = draftId.replace(/^s:/, '');
+    const response = await this.request(`/emails/draft/${cleanDraftId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ to, subject, content }),
+    }) as DraftResponse;
+    return response.draftId;
   }
 } 

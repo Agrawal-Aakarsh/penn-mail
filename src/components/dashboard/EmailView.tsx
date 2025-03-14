@@ -1,13 +1,20 @@
 import { EmailMessage } from "@/lib/gmail"
 import DOMPurify from 'dompurify'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Button } from "@/components/ui/button"
+import { Reply } from "lucide-react"
+import { EmailComposer } from "./EmailComposer"
+import { EmailAddress } from "@/components/ui/EmailAddress"
 
 interface EmailViewProps {
   email?: EmailMessage
+  onSend: (email: { to: string; subject: string; content: string }) => Promise<void>
+  onCompose?: (to: string) => void
 }
 
-export function EmailView({ email }: EmailViewProps) {
+export function EmailView({ email, onSend, onCompose }: EmailViewProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const [isReplying, setIsReplying] = useState(false);
 
   useEffect(() => {
     if (contentRef.current) {
@@ -48,21 +55,48 @@ export function EmailView({ email }: EmailViewProps) {
     ALLOW_DATA_ATTR: true
   });
 
+  const handleReply = () => {
+    setIsReplying(true);
+  };
+
+  const handleCloseReply = () => {
+    setIsReplying(false);
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex-none p-8 border-b bg-white">
-        <h1 className="text-2xl font-bold text-foreground mb-4">{email.subject}</h1>
-        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+        <div className="flex justify-between items-start mb-4">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-900">{email.subject}</h1>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleReply}
+            className="ml-4"
+          >
+            <Reply className="h-4 w-4 mr-2" />
+            Reply
+          </Button>
+        </div>
+        <div className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-600">
           <div className="flex items-center gap-2">
-            <span className="font-medium">From:</span>
-            <span>{email.from}</span>
+            <span className="font-medium w-12">From:</span>
+            <EmailAddress emailString={email.from} onComposeClick={onCompose} />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-medium">To:</span>
-            <span>{email.to}</span>
+            <span className="font-medium w-12">To:</span>
+            <div className="flex flex-wrap gap-1">
+              {email.to.split(',').map((recipient, index) => (
+                <EmailAddress 
+                  key={index} 
+                  emailString={recipient.trim()} 
+                  onComposeClick={onCompose}
+                />
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-medium">Date:</span>
+            <span className="font-medium w-12">Date:</span>
             <span>{new Date(email.date).toLocaleString()}</span>
           </div>
         </div>
@@ -71,11 +105,21 @@ export function EmailView({ email }: EmailViewProps) {
         <div className="max-w-3xl mx-auto p-8">
           <div 
             ref={contentRef}
-            className="prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_*]:max-w-full"
+            className="prose prose-sm max-w-none text-gray-900 dark:text-gray-900 [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_*]:max-w-full"
             dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         </div>
       </div>
+      {isReplying && (
+        <div className="border-t pt-8 pb-8">
+          <EmailComposer
+            onClose={handleCloseReply}
+            onSend={onSend}
+            replyTo={email}
+            isReply={true}
+          />
+        </div>
+      )}
     </div>
   )
 } 

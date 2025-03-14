@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth/AuthProvider"
-import { LogOut, User, Inbox, Send, FileEdit } from "lucide-react"
+import { LogOut, User, Inbox, Send, FileEdit, Moon, Sun } from "lucide-react"
 import { EmailView } from "./Dashboard"
 import {
   DropdownMenu,
@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useTheme } from "@/components/ThemeProvider"
 
 interface SidebarProps {
   onCompose: () => void
@@ -18,6 +19,7 @@ interface SidebarProps {
 
 export function Sidebar({ onCompose, currentView, onViewChange }: SidebarProps) {
   const { logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <div className="w-64 border-r bg-muted/20 flex flex-col">
@@ -65,6 +67,20 @@ export function Sidebar({ onCompose, currentView, onViewChange }: SidebarProps) 
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="top" className="w-56">
+            <DropdownMenuItem onClick={toggleTheme}>
+              {theme === 'dark' ? (
+                <>
+                  <Sun className="mr-2 h-4 w-4" />
+                  <span>Light Mode</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="mr-2 h-4 w-4" />
+                  <span>Dark Mode</span>
+                </>
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="text-red-600">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Sign out</span>

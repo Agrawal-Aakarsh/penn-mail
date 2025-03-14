@@ -35,26 +35,26 @@ export function EmailList({
   searchQuery = ""
 }: EmailListProps) {
   return (
-    <div className="w-[400px] overflow-auto border-r flex flex-col">
+    <div className="w-[400px] overflow-auto border-r flex flex-col bg-white dark:bg-stone-800">
       <div className="flex-1">
         {emails.map((email) => (
           <button
             key={email.id}
             onClick={() => onEmailSelect(email)}
             className={cn(
-              "w-full p-4 text-left border-b hover:bg-muted/50",
-              selectedEmail?.id === email.id && "bg-muted",
+              "w-full p-4 text-left border-b hover:bg-muted/50 dark:hover:bg-neutral-700/50",
+              selectedEmail?.id === email.id && "bg-muted dark:bg-neutral-700",
               email.unread && "font-semibold"
             )}
           >
             <div className="flex items-center justify-between">
-              <span className="font-semibold">{highlightText(email.from, searchQuery)}</span>
-              <span className="text-sm text-muted-foreground">
+              <span className="font-semibold dark:text-neutral-100">{highlightText(email.from, searchQuery)}</span>
+              <span className="text-sm text-muted-foreground dark:text-neutral-400">
                 {new Date(email.date).toLocaleDateString()}
               </span>
             </div>
-            <div className="text-sm font-medium mt-1">{highlightText(email.subject, searchQuery)}</div>
-            <div className="text-sm text-muted-foreground mt-1 truncate">
+            <div className="text-sm font-medium mt-1 dark:text-neutral-200">{highlightText(email.subject, searchQuery)}</div>
+            <div className="text-sm text-muted-foreground dark:text-neutral-400 mt-1 truncate">
               {highlightText(email.snippet, searchQuery)}
             </div>
           </button>
@@ -66,7 +66,7 @@ export function EmailList({
             variant="outline"
             onClick={onLoadMore}
             disabled={loading}
-            className="w-full"
+            className="w-full dark:bg-neutral-700 dark:hover:bg-neutral-600"
           >
             {loading ? (
               <>
