@@ -1,18 +1,66 @@
-import { useState } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { ViewState } from "@/types/email"
-import { Tab } from "../../types/tab"
+import { Tab } from "@/types/tab"
 import { Sidebar } from "./Sidebar"
 import { TabBar } from "./TabBar"
 import { EmailList } from "./EmailList"
 import { EmailView } from "./EmailView"
 import { EmailComposer } from "./EmailComposer"
 import { useEmail } from "@/lib/EmailContext"
+import { useDebounce } from "@/lib/hooks"
+
+export type EmailView = 'inbox' | 'sent' | 'drafts';
 
 export function Dashboard() {
   const { emails, loading, error, selectedEmail, setSelectedEmail, refreshEmails, gmailService } = useEmail()
   const [activeTab, setActiveTab] = useState<Tab>("reply")
   const [viewState, setViewState] = useState<ViewState>("reading")
+  const [currentView, setCurrentView] = useState<EmailView>("inbox")
   const [sendingEmail, setSendingEmail] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [pageToken, setPageToken] = useState<string | undefined>(undefined)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  const debouncedSearch = useDebounce(searchQuery, 300)
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query)
+    setPageToken(undefined) // Reset pagination when search changes
+    const label = currentView === 'drafts' ? 'draft' : currentView
+    refreshEmails(label, { search: query })
+  }, [currentView, refreshEmails])
+
+  useEffect(() => {
+    if (debouncedSearch !== searchQuery) {
+      const label = currentView === 'drafts' ? 'draft' : currentView
+      refreshEmails(label, { search: debouncedSearch })
+    }
+  }, [debouncedSearch, currentView, refreshEmails, searchQuery])
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return
+
+    setLoadingMore(true)
+    try {
+      const label = currentView === 'drafts' ? 'draft' : currentView
+      const result = await refreshEmails(label, {
+        pageToken,
+        search: debouncedSearch
+      })
+      
+      if (result?.nextPageToken) {
+        setPageToken(result.nextPageToken)
+        setHasMore(true)
+      } else {
+        setHasMore(false)
+      }
+    } catch (error) {
+      console.error('Error loading more emails:', error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const handleCompose = () => {
     setSelectedEmail(null)
@@ -29,7 +77,11 @@ export function Dashboard() {
       const success = await gmailService.sendEmail(email.to, email.subject, email.content)
       if (success) {
         setViewState("reading")
-        await refreshEmails()
+        // Refresh both inbox and sent folders after sending
+        await Promise.all([
+          refreshEmails('inbox'),
+          refreshEmails('sent')
+        ])
       } else {
         // TODO: Show error message to user
         console.error("Failed to send email")
@@ -41,21 +93,33 @@ export function Dashboard() {
     }
   }
 
-  // For now, we'll show all emails in the inbox and implement proper filtering later
-  const filteredEmails = emails.filter(email => {
-    switch (activeTab) {
-      case "reply":
-        return true // Show all emails in reply tab for now
-      case "read":
-        return true // Show all emails in read tab for now
-      case "archive":
-        return false // Archive view is empty for now until we implement archiving
-      default:
-        return true
-    }
-  })
+  const handleViewChange = async (view: EmailView) => {
+    setCurrentView(view)
+    setSelectedEmail(null)
+    setSearchQuery("")
+    setPageToken(undefined)
+    setHasMore(true)
+    // Convert view type to label type
+    const label = view === 'drafts' ? 'draft' : view
+    await refreshEmails(label)
+  }
 
-  if (loading) {
+  // Get emails for current view
+  const getCurrentEmails = () => {
+    switch (currentView) {
+      case 'sent':
+        return emails.sent;
+      case 'drafts':
+        return emails.drafts;
+      case 'inbox':
+      default:
+        return emails.inbox;
+    }
+  }
+
+  const currentEmails = getCurrentEmails()
+
+  if (loading && !loadingMore) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-lg">Loading emails...</div>
@@ -73,14 +137,30 @@ export function Dashboard() {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar onCompose={handleCompose} />
+      <Sidebar 
+        onCompose={handleCompose} 
+        currentView={currentView}
+        onViewChange={handleViewChange}
+      />
       <div className="flex-1 flex flex-col">
-        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+        {/* Only show TabBar for inbox view */}
+        {currentView === 'inbox' && (
+          <TabBar 
+            activeTab={activeTab} 
+            onTabChange={setActiveTab}
+            searchQuery={searchQuery}
+            onSearch={handleSearch}
+          />
+        )}
         <div className="flex-1 flex overflow-hidden">
           <EmailList 
-            emails={filteredEmails}
+            emails={currentEmails}
             selectedEmail={selectedEmail}
             onEmailSelect={setSelectedEmail}
+            loading={loadingMore}
+            hasMore={hasMore}
+            onLoadMore={handleLoadMore}
+            searchQuery={searchQuery}
           />
           <div className="flex-1">
             {viewState === "reading" ? (

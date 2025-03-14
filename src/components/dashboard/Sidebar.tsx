@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth/AuthProvider"
-import { LogOut, User } from "lucide-react"
+import { LogOut, User, Inbox, Send, FileEdit } from "lucide-react"
+import { EmailView } from "./Dashboard"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,9 +12,11 @@ import {
 
 interface SidebarProps {
   onCompose: () => void
+  currentView: EmailView
+  onViewChange: (view: EmailView) => void
 }
 
-export function Sidebar({ onCompose }: SidebarProps) {
+export function Sidebar({ onCompose, currentView, onViewChange }: SidebarProps) {
   const { logout } = useAuth();
 
   return (
@@ -25,24 +28,33 @@ export function Sidebar({ onCompose }: SidebarProps) {
         </Button>
       </div>
       <nav className="mt-4 flex-1">
-        <a 
-          href="#" 
-          className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:bg-muted/50"
+        <button 
+          onClick={() => onViewChange("inbox")}
+          className={`flex items-center w-full px-4 py-2 text-sm hover:bg-muted/50 ${
+            currentView === "inbox" ? "bg-muted text-primary font-medium" : "text-muted-foreground"
+          }`}
         >
+          <Inbox className="h-4 w-4 mr-3" />
           Inbox
-        </a>
-        <a 
-          href="#" 
-          className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:bg-muted/50"
+        </button>
+        <button 
+          onClick={() => onViewChange("sent")}
+          className={`flex items-center w-full px-4 py-2 text-sm hover:bg-muted/50 ${
+            currentView === "sent" ? "bg-muted text-primary font-medium" : "text-muted-foreground"
+          }`}
         >
+          <Send className="h-4 w-4 mr-3" />
           Sent
-        </a>
-        <a 
-          href="#" 
-          className="flex items-center px-4 py-2 text-sm text-muted-foreground hover:bg-muted/50"
+        </button>
+        <button 
+          onClick={() => onViewChange("drafts")}
+          className={`flex items-center w-full px-4 py-2 text-sm hover:bg-muted/50 ${
+            currentView === "drafts" ? "bg-muted text-primary font-medium" : "text-muted-foreground"
+          }`}
         >
+          <FileEdit className="h-4 w-4 mr-3" />
           Drafts
-        </a>
+        </button>
       </nav>
       <div className="p-4 mt-auto border-t">
         <DropdownMenu>

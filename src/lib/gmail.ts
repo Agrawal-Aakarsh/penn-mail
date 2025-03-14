@@ -6,24 +6,31 @@ export interface EmailMessage {
   to: string;
   date: string;
   snippet: string;
-  body?: string;
+  body: string;
+  label: string;
+  unread?: boolean;
 }
 
-class GmailService {
-  private baseUrl = 'http://localhost:3001/api';
+export interface EmailResponse {
+  emails: EmailMessage[];
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
+}
+
+export default class GmailService {
   private accessToken: string;
+  private baseUrl = 'http://localhost:3001/api';
 
   constructor(accessToken: string) {
     this.accessToken = accessToken;
   }
 
-  private async fetchWithAuth(endpoint: string, options: RequestInit = {}) {
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
       headers: {
         ...options.headers,
         'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
       },
     });
 
@@ -34,18 +41,22 @@ class GmailService {
     return response.json();
   }
 
-  async listEmails(maxResults: number = 20): Promise<EmailMessage[]> {
-    try {
-      return await this.fetchWithAuth('/emails');
-    } catch (error) {
-      console.error('Error listing emails:', error);
-      return [];
-    }
+  async listEmails(
+    label: 'inbox' | 'sent' | 'draft',
+    options?: { pageToken?: string; search?: string }
+  ): Promise<EmailResponse> {
+    const queryParams = new URLSearchParams({
+      label,
+      ...(options?.pageToken && { pageToken: options.pageToken }),
+      ...(options?.search && { search: options.search })
+    });
+
+    return this.request<EmailResponse>(`/emails?${queryParams}`);
   }
 
   async getEmail(messageId: string): Promise<EmailMessage | null> {
     try {
-      return await this.fetchWithAuth(`/emails/${messageId}`);
+      return await this.request<EmailMessage>(`/emails/${messageId}`);
     } catch (error) {
       console.error('Error fetching email:', error);
       return null;
@@ -54,8 +65,11 @@ class GmailService {
 
   async sendEmail(to: string, subject: string, content: string): Promise<boolean> {
     try {
-      await this.fetchWithAuth('/emails/send', {
+      await this.request('/send', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ to, subject, content }),
       });
       return true;
@@ -64,6 +78,17 @@ class GmailService {
       return false;
     }
   }
-}
 
-export default GmailService; 
+  async saveDraft(to: string, subject: string, content: string): Promise<boolean> {
+    try {
+      await this.request('/emails/draft', {
+        method: 'POST',
+        body: JSON.stringify({ to, subject, content }),
+      });
+      return true;
+    } catch (error) {
+      console.error('Error saving draft:', error);
+      return false;
+    }
+  }
+} 

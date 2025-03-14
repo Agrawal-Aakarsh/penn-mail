@@ -1,17 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import GmailService, { EmailMessage } from './gmail';
+import GmailService, { EmailMessage, EmailResponse } from './gmail';
 
 interface EmailContextType {
-  emails: EmailMessage[];
+  emails: {
+    inbox: EmailMessage[];
+    sent: EmailMessage[];
+    drafts: EmailMessage[];
+  };
   loading: boolean;
   error: string | null;
-  refreshEmails: () => Promise<void>;
+  refreshEmails: (
+    label?: 'inbox' | 'sent' | 'draft',
+    options?: { pageToken?: string; search?: string }
+  ) => Promise<EmailResponse | void>;
   selectedEmail: EmailMessage | null;
   setSelectedEmail: (email: EmailMessage | null) => void;
   gmailService: GmailService;
 }
 
-const EmailContext = createContext<EmailContextType | null>(null);
+const EmailContext = createContext<EmailContextType | undefined>(undefined);
 
 export const useEmail = () => {
   const context = useContext(EmailContext);
@@ -27,27 +34,92 @@ interface EmailProviderProps {
 }
 
 export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessToken }) => {
-  const [emails, setEmails] = useState<EmailMessage[]>([]);
+  const [emails, setEmails] = useState<EmailContextType['emails']>({
+    inbox: [],
+    sent: [],
+    drafts: []
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
   const [gmailService] = useState(() => new GmailService(accessToken));
 
-  const refreshEmails = async () => {
+  const refreshEmails = async (
+    label?: 'inbox' | 'sent' | 'draft',
+    options?: { pageToken?: string; search?: string }
+  ): Promise<EmailResponse | void> => {
     try {
-      setLoading(true);
+      if (!label && !options?.pageToken) {
+        setLoading(true);
+      }
       setError(null);
-      const fetchedEmails = await gmailService.listEmails();
-      setEmails(fetchedEmails);
+
+      if (label) {
+        // Refresh only specific label
+        console.log('[DEBUG] Fetching emails for specific label:', label);
+        const response = await gmailService.listEmails(label, options);
+        console.log('[DEBUG] Fetched emails response:', response);
+        
+        setEmails(prev => {
+          const labelKey = label === 'draft' ? 'drafts' : 
+                          label === 'sent' ? 'sent' : 
+                          'inbox';
+          const newEmails = options?.pageToken 
+            ? [...prev[labelKey], ...response.emails]
+            : response.emails;
+          
+          return {
+            ...prev,
+            [labelKey]: newEmails
+          };
+        });
+
+        return response;
+      } else {
+        // Initial fetch - get inbox emails first
+        console.log('[DEBUG] Initial fetch - getting inbox emails');
+        try {
+          const inboxResponse = await gmailService.listEmails('inbox');
+          console.log('[DEBUG] Fetched inbox emails:', inboxResponse);
+          
+          // Then fetch sent emails
+          console.log('[DEBUG] Fetching sent emails');
+          const sentResponse = await gmailService.listEmails('sent');
+          console.log('[DEBUG] Fetched sent emails:', sentResponse);
+          
+          // Finally fetch drafts
+          console.log('[DEBUG] Fetching draft emails');
+          const draftResponse = await gmailService.listEmails('draft');
+          console.log('[DEBUG] Fetched draft emails:', draftResponse);
+
+          setEmails({
+            inbox: inboxResponse.emails,
+            sent: sentResponse.emails,
+            drafts: draftResponse.emails
+          });
+        } catch (error) {
+          console.error('[DEBUG] Error during initial fetch:', error);
+          // Set empty arrays for failed fetches but don't throw
+          setEmails({
+            inbox: [],
+            sent: [],
+            drafts: []
+          });
+          throw error; // Re-throw to be caught by outer catch block
+        }
+      }
     } catch (err) {
-      setError('Failed to fetch emails. Please try again later.');
-      console.error('Error fetching emails:', err);
+      console.error('[DEBUG] Error in refreshEmails:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch emails';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  // Initial fetch of emails
   useEffect(() => {
+    console.log('[DEBUG] Initial email fetch');
     refreshEmails();
   }, [accessToken]);
 

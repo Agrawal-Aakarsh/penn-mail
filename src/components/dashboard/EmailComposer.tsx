@@ -12,6 +12,7 @@ import TextStyle from '@tiptap/extension-text-style'
 import FontFamily from '@tiptap/extension-font-family'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useEmail } from '@/lib/EmailContext'
 import { 
   Bold as BoldIcon, 
   Italic as ItalicIcon, 
@@ -37,9 +38,11 @@ const fontFamilies = {
 }
 
 export function EmailComposer({ onClose, onSend, sending = false }: EmailComposerProps) {
+  const { gmailService } = useEmail();
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
   const [currentFont, setCurrentFont] = useState('Arial')
+  const [savingDraft, setSavingDraft] = useState(false)
 
   const editor = useEditor({
     extensions: [
@@ -87,6 +90,21 @@ export function EmailComposer({ onClose, onSend, sending = false }: EmailCompose
     })
   }
 
+  const handleSaveDraft = async () => {
+    if (!editor?.getText() || savingDraft) return
+    try {
+      setSavingDraft(true)
+      const success = await gmailService.saveDraft(to, subject, editor.getHTML())
+      if (success) {
+        onClose()
+      }
+    } catch (error) {
+      console.error('Error saving draft:', error)
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
   const handleToChange = (e: ChangeEvent<HTMLInputElement>) => setTo(e.target.value)
   const handleSubjectChange = (e: ChangeEvent<HTMLInputElement>) => setSubject(e.target.value)
 
@@ -125,14 +143,14 @@ export function EmailComposer({ onClose, onSend, sending = false }: EmailCompose
             placeholder="To"
             value={to}
             onChange={handleToChange}
-            disabled={sending}
+            disabled={sending || savingDraft}
           />
           <Input
             type="text"
             placeholder="Subject"
             value={subject}
             onChange={handleSubjectChange}
-            disabled={sending}
+            disabled={sending || savingDraft}
           />
         </div>
       </div>
@@ -142,7 +160,7 @@ export function EmailComposer({ onClose, onSend, sending = false }: EmailCompose
           className="h-8 px-2 rounded-md border bg-background"
           onChange={e => handleFontChange(e.target.value)}
           value={currentFont}
-          disabled={sending}
+          disabled={sending || savingDraft}
         >
           {Object.keys(fontFamilies).map(font => (
             <option key={font} value={font}>{font}</option>
@@ -158,7 +176,7 @@ export function EmailComposer({ onClose, onSend, sending = false }: EmailCompose
               : editor?.chain().focus().setParagraph().run()
           }}
           value={editor?.isActive('heading') ? editor.getAttributes('heading').level : '0'}
-          disabled={sending}
+          disabled={sending || savingDraft}
         >
           <option value="0">Normal</option>
           <option value="1">Heading 1</option>
@@ -203,10 +221,20 @@ export function EmailComposer({ onClose, onSend, sending = false }: EmailCompose
       </div>
 
       <div className="p-4 flex justify-end space-x-2 bg-muted/5">
-        <Button variant="outline" onClick={onClose} disabled={sending}>
+        <Button variant="outline" onClick={onClose} disabled={sending || savingDraft}>
           Cancel
         </Button>
-        <Button onClick={handleSend} disabled={sending}>
+        <Button variant="outline" onClick={handleSaveDraft} disabled={sending || savingDraft}>
+          {savingDraft ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            'Save Draft'
+          )}
+        </Button>
+        <Button onClick={handleSend} disabled={sending || savingDraft}>
           {sending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

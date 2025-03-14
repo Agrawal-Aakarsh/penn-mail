@@ -1,9 +1,9 @@
-import { Email } from "@/types/email"
+import { EmailMessage } from "@/lib/gmail"
 import DOMPurify from 'dompurify'
 import { useEffect, useRef } from 'react'
 
 interface EmailViewProps {
-  email?: Email
+  email?: EmailMessage
 }
 
 export function EmailView({ email }: EmailViewProps) {
