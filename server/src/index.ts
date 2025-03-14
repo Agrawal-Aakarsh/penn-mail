@@ -178,7 +178,7 @@ const getMessageBody = (payload: any): string => {
   return '';
 };
 
-const draftsHandler: RequestHandler = async (req, res) => {
+const draftsHandler: RequestHandler = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -192,12 +192,18 @@ const draftsHandler: RequestHandler = async (req, res) => {
     console.log('Fetching drafts');
     const response = await gmail.users.drafts.list({
       userId: 'me',
-      maxResults: 20
+      maxResults: 20,
+      pageToken: req.query.pageToken as string | undefined,
+      q: req.query.search as string | undefined
     });
 
     if (!response.data || !response.data.drafts) {
       console.log('No drafts found');
-      res.json([]);
+      res.json({
+        emails: [],
+        nextPageToken: undefined,
+        resultSizeEstimate: 0
+      });
       return;
     }
 
@@ -260,20 +266,29 @@ const draftsHandler: RequestHandler = async (req, res) => {
     });
     
     console.log(`Successfully processed ${draftEmails.length} drafts`);
-    res.json(draftEmails);
+    res.json({
+      emails: draftEmails,
+      nextPageToken: response.data.nextPageToken,
+      resultSizeEstimate: response.data.resultSizeEstimate || draftEmails.length
+    });
   } catch (error) {
     console.error('Error in drafts route:', error);
     res.status(500).json({ error: 'Failed to fetch drafts' });
   }
 };
 
-const emailsHandler: RequestHandler = async (req, res) => {
+const emailsHandler: RequestHandler = async (req, res, next) => {
   try {
     const accessToken = req.headers.authorization?.split(' ')[1];
     if (!accessToken) {
       console.log('[DEBUG] No access token provided');
       res.status(401).json({ error: 'No access token provided' });
       return;
+    }
+
+    // If label is 'draft', redirect to draftsHandler
+    if (req.query.label === 'draft') {
+      return draftsHandler(req, res, next);
     }
 
     // If no label is specified, fetch inbox emails by default
@@ -293,9 +308,6 @@ const emailsHandler: RequestHandler = async (req, res) => {
       switch (label) {
         case 'sent':
           query.labelIds = ['SENT'];
-          break;
-        case 'drafts':
-          query.labelIds = ['DRAFT'];
           break;
         case 'inbox':
         default:

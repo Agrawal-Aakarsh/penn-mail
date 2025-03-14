@@ -64,9 +64,11 @@ export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessTo
           const labelKey = label === 'draft' ? 'drafts' : 
                           label === 'sent' ? 'sent' : 
                           'inbox';
+          // Handle both array and object responses
+          const emails = Array.isArray(response) ? response : response.emails;
           const newEmails = options?.pageToken 
-            ? [...prev[labelKey], ...response.emails]
-            : response.emails;
+            ? [...prev[labelKey], ...emails]
+            : emails;
           
           return {
             ...prev,
@@ -74,6 +76,14 @@ export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessTo
           };
         });
 
+        // If response is an array, convert it to EmailResponse format
+        if (Array.isArray(response)) {
+          return {
+            emails: response,
+            nextPageToken: undefined,
+            resultSizeEstimate: response.length
+          };
+        }
         return response;
       } else {
         // Initial fetch - get inbox emails first
