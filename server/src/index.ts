@@ -7,6 +7,7 @@ import { ParamsDictionary } from 'express-serve-static-core';
 import { ILayer } from 'express-serve-static-core';
 import { gmail_v1 } from 'googleapis';
 import { Query } from 'express-serve-static-core';
+import classificationRoutes from './routes/classificationRoutes';
 
 dotenv.config();
 
@@ -639,6 +640,7 @@ router.post('/emails/send', sendEmailHandler);
 router.post('/emails/draft', saveDraftHandler);
 router.put('/emails/draft/:id', updateDraftHandler);
 router.get('/debug/routes', debugRoutesHandler);
+router.use('/classify', classificationRoutes);
 
 // Mount the router with /api prefix
 app.use('/api', router);
