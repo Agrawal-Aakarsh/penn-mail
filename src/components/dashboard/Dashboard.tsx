@@ -13,7 +13,22 @@ import { EmailMessage } from "@/lib/gmail"
 export type EmailView = 'inbox' | 'sent' | 'drafts';
 
 export function Dashboard() {
-  const { emails, loading, error, selectedEmail, setSelectedEmail, refreshEmails, gmailService } = useEmail()
+  const { 
+    emails, 
+    loading, 
+    error, 
+    selectedEmail, 
+    setSelectedEmail, 
+    refreshEmails, 
+    gmailService,
+    isClassifying,
+    classifiedEmails,
+    classifyCurrentEmail,
+    classifySelectedEmails,
+    classifyInbox,
+    refreshClassifiedEmails
+  } = useEmail();
+  
   const [activeTab, setActiveTab] = useState<Tab>("reply")
   const [viewState, setViewState] = useState<ViewState>("reading")
   const [currentView, setCurrentView] = useState<EmailView>("inbox")
@@ -23,6 +38,7 @@ export function Dashboard() {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [draftToEdit, setDraftToEdit] = useState<EmailMessage | null>(null)
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([])
 
   const debouncedSearch = useDebounce(searchQuery, 300)
 
@@ -39,6 +55,14 @@ export function Dashboard() {
       refreshEmails(label, { search: debouncedSearch })
     }
   }, [debouncedSearch, currentView, refreshEmails, searchQuery])
+
+  // Effect to handle tab changes
+  useEffect(() => {
+    // When active tab changes, we need to update the classification view
+    if (activeTab === 'reply' || activeTab === 'read' || activeTab === 'archive') {
+      refreshClassifiedEmails();
+    }
+  }, [activeTab, refreshClassifiedEmails]);
 
   const handleLoadMore = async () => {
     if (loadingMore || !hasMore) return
@@ -132,6 +156,13 @@ export function Dashboard() {
 
   // Get emails for current view
   const getCurrentEmails = () => {
+    // If in inbox view but with one of the classification tabs active
+    if (currentView === 'inbox' && (activeTab === 'reply' || activeTab === 'read' || activeTab === 'archive')) {
+      // Return the classified emails for the current tab
+      return classifiedEmails[activeTab];
+    }
+    
+    // Otherwise use the standard views
     switch (currentView) {
       case 'sent':
         return emails.sent;
@@ -149,7 +180,8 @@ export function Dashboard() {
     setSelectedEmail(null);
     setViewState("composing");
     setDraftToEdit({
-      id: '',
+      id: `draft-${Date.now()}`,
+      emailId: `draft-${Date.now()}`,
       threadId: '',
       subject: '',
       from: '',
@@ -159,6 +191,14 @@ export function Dashboard() {
       body: '',
       label: 'draft'
     });
+  };
+
+  const handleEmailSelection = (emailId: string, isSelected: boolean) => {
+    if (isSelected) {
+      setSelectedEmails(prev => [...prev, emailId]);
+    } else {
+      setSelectedEmails(prev => prev.filter(id => id !== emailId));
+    }
   };
 
   if (loading && !loadingMore) {
@@ -185,15 +225,13 @@ export function Dashboard() {
         onViewChange={handleViewChange}
       />
       <div className="flex-1 flex flex-col bg-white dark:bg-stone-900">
-        {/* Only show TabBar for inbox view */}
-        {currentView === 'inbox' && (
-          <TabBar 
-            activeTab={activeTab} 
-            onTabChange={setActiveTab}
-            searchQuery={searchQuery}
-            onSearch={handleSearch}
-          />
-        )}
+        {/* Show TabBar for inbox view and classified views */}
+        <TabBar 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab}
+          searchQuery={searchQuery}
+          onSearch={handleSearch}
+        />
         <div className="flex-1 flex overflow-hidden">
           <EmailList 
             emails={currentEmails}
@@ -203,6 +241,9 @@ export function Dashboard() {
             hasMore={hasMore}
             onLoadMore={handleLoadMore}
             searchQuery={searchQuery}
+            enableMultiSelect={currentView === 'inbox'}
+            onSelectEmail={handleEmailSelection}
+            selectedEmailIds={selectedEmails}
           />
           <div className="flex-1">
             {viewState === "reading" ? (
@@ -224,4 +265,4 @@ export function Dashboard() {
       </div>
     </div>
   )
-} 
+}
