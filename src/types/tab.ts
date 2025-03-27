@@ -1,1 +1,1 @@
-export type Tab = "reply" | "read" | "archive"; 
+export type Tab = 'reply' | 'read' | 'archive'

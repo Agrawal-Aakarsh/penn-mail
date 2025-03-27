@@ -1,147 +1,183 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import GmailService, { EmailMessage, EmailResponse } from './gmail';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import GmailService, { EmailMessage } from './gmail';
+import { useClassifier } from '@/hooks/useClassifier';
 
-interface EmailContextType {
+interface EmailContextValue {
   emails: {
     inbox: EmailMessage[];
     sent: EmailMessage[];
     drafts: EmailMessage[];
+    reply: EmailMessage[];
+    read: EmailMessage[];
+    archive: EmailMessage[];
   };
   loading: boolean;
   error: string | null;
-  refreshEmails: (
-    label?: 'inbox' | 'sent' | 'draft',
-    options?: { pageToken?: string; search?: string }
-  ) => Promise<EmailResponse | void>;
   selectedEmail: EmailMessage | null;
   setSelectedEmail: (email: EmailMessage | null) => void;
+  refreshEmails: (label: string, options?: { pageToken?: string; search?: string }) => Promise<any>;
   gmailService: GmailService;
+  // Classifier specific methods
+  isClassifying: boolean;
+  classifyCurrentEmail: () => Promise<any>;
+  classifySelectedEmails: (emailIds: string[]) => Promise<any>;
+  classifyInbox: (maxResults?: number) => Promise<any>;
+  refreshClassifiedEmails: () => Promise<void>;
 }
-
-const EmailContext = createContext<EmailContextType | undefined>(undefined);
-
-export const useEmail = () => {
-  const context = useContext(EmailContext);
-  if (!context) {
-    throw new Error('useEmail must be used within an EmailProvider');
-  }
-  return context;
-};
 
 interface EmailProviderProps {
-  children: React.ReactNode;
-  accessToken: string;
+  children: ReactNode;
+  accessToken?: string; // OAuth access token for GmailService
 }
 
-export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessToken }) => {
-  const [emails, setEmails] = useState<EmailContextType['emails']>({
+const EmailContext = createContext<EmailContextValue | undefined>(undefined);
+
+export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessToken = '' }) => {
+  const [emails, setEmails] = useState<{
+    inbox: EmailMessage[];
+    sent: EmailMessage[];
+    drafts: EmailMessage[];
+    reply: EmailMessage[];
+    read: EmailMessage[];
+    archive: EmailMessage[];
+  }>({
     inbox: [],
     sent: [],
-    drafts: []
+    drafts: [],
+    reply: [],
+    read: [],
+    archive: []
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
   const [gmailService] = useState(() => new GmailService(accessToken));
+  
+  // Initialize classifier hook
+  const { 
+    isClassifying, 
+    classifiedEmails, 
+    classifyEmail, 
+    classifyBatch, 
+    classifyInbox: classifyInboxEmails,
+    refreshAllCategories
+  } = useClassifier();
 
-  const refreshEmails = async (
-    label?: 'inbox' | 'sent' | 'draft',
-    options?: { pageToken?: string; search?: string }
-  ): Promise<EmailResponse | void> => {
-    try {
-      if (!label && !options?.pageToken) {
+  useEffect(() => {
+    // Update emails state when classified emails change
+    setEmails(prev => ({
+      ...prev,
+      reply: classifiedEmails.reply,
+      read: classifiedEmails.read,
+      archive: classifiedEmails.archive
+    }));
+  }, [classifiedEmails]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
         setLoading(true);
-      }
-      setError(null);
-
-      if (label) {
-        // Refresh only specific label
-        console.log('[DEBUG] Fetching emails for specific label:', label);
-        const response = await gmailService.listEmails(label, options);
-        console.log('[DEBUG] Fetched emails response:', response);
         
-        setEmails(prev => {
-          const labelKey = label === 'draft' ? 'drafts' : 
-                          label === 'sent' ? 'sent' : 
-                          'inbox';
-          // Handle both array and object responses
-          const emails = Array.isArray(response) ? response : response.emails;
-          const newEmails = options?.pageToken 
-            ? [...prev[labelKey], ...emails]
-            : emails;
-          
-          return {
-            ...prev,
-            [labelKey]: newEmails
-          };
-        });
-
-        // If response is an array, convert it to EmailResponse format
-        if (Array.isArray(response)) {
-          return {
-            emails: response,
-            nextPageToken: undefined,
-            resultSizeEstimate: response.length
-          };
-        }
-        return response;
-      } else {
-        // Initial fetch - get inbox emails first
-        console.log('[DEBUG] Initial fetch - getting inbox emails');
-        try {
-          const inboxResponse = await gmailService.listEmails('inbox');
-          console.log('[DEBUG] Fetched inbox emails:', inboxResponse);
-          
-          // Then fetch sent emails
-          console.log('[DEBUG] Fetching sent emails');
-          const sentResponse = await gmailService.listEmails('sent');
-          console.log('[DEBUG] Fetched sent emails:', sentResponse);
-          
-          // Finally fetch drafts
-          console.log('[DEBUG] Fetching draft emails');
-          const draftResponse = await gmailService.listEmails('draft');
-          console.log('[DEBUG] Fetched draft emails:', draftResponse);
-
-          setEmails({
-            inbox: inboxResponse.emails,
-            sent: sentResponse.emails,
-            drafts: draftResponse.emails
-          });
-        } catch (error) {
-          console.error('[DEBUG] Error during initial fetch:', error);
-          // Set empty arrays for failed fetches but don't throw
-          setEmails({
-            inbox: [],
-            sent: [],
-            drafts: []
-          });
-          throw error; // Re-throw to be caught by outer catch block
-        }
+        // Initialize with inbox emails
+        await refreshEmails('inbox');
+        
+        // Also load classified emails
+        await refreshAllCategories();
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('Error initializing emails:', error);
+        setError('Failed to load emails. Please try again later.');
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('[DEBUG] Error in refreshEmails:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch emails';
-      setError(errorMessage);
+    };
+
+    init();
+  }, []);
+
+  const refreshEmails = async (label: string, options?: { pageToken?: string; search?: string }) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Fix: Use the correct method (listEmails) from GmailService
+      const validLabel = label === 'inbox' || label === 'sent' || label === 'draft' 
+        ? (label as 'inbox' | 'sent' | 'draft') 
+        : 'inbox';
+      
+      const response = await gmailService.listEmails(validLabel, options);
+      
+      const newEmails = response.emails || [];
+
+      // Update only the appropriate category
+      setEmails(prev => {
+        if (label === 'inbox') {
+          return { ...prev, inbox: options?.pageToken ? [...prev.inbox, ...newEmails] : newEmails };
+        } else if (label === 'sent') {
+          return { ...prev, sent: options?.pageToken ? [...prev.sent, ...newEmails] : newEmails };
+        } else if (label === 'draft') {
+          return { ...prev, drafts: options?.pageToken ? [...prev.drafts, ...newEmails] : newEmails };
+        }
+        return prev;
+      });
+      
+      return response;
+    } catch (error) {
+      console.error('Error refreshing emails:', error);
+      setError('Failed to refresh emails');
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
-  // Initial fetch of emails
-  useEffect(() => {
-    console.log('[DEBUG] Initial email fetch');
-    refreshEmails();
-  }, [accessToken]);
-
-  const value = {
-    emails,
-    loading,
-    error,
-    refreshEmails,
-    selectedEmail,
-    setSelectedEmail,
-    gmailService,
+  // Classifier specific methods
+  const classifyCurrentEmail = async () => {
+    if (!selectedEmail) {
+      return null;
+    }
+    return await classifyEmail(selectedEmail.id);
   };
 
-  return <EmailContext.Provider value={value}>{children}</EmailContext.Provider>;
-}; 
+  const classifySelectedEmails = async (emailIds: string[]) => {
+    return await classifyBatch(emailIds);
+  };
+
+  const classifyInbox = async (maxResults: number = 10) => {
+    return await classifyInboxEmails(maxResults);
+  };
+
+  const refreshClassifiedEmails = async () => {
+    await refreshAllCategories();
+  };
+
+  return (
+    <EmailContext.Provider
+      value={{
+        emails,
+        loading,
+        error,
+        selectedEmail,
+        setSelectedEmail,
+        refreshEmails,
+        gmailService,
+        // Classifier methods
+        isClassifying,
+        classifyCurrentEmail,
+        classifySelectedEmails,
+        classifyInbox,
+        refreshClassifiedEmails
+      }}
+    >
+      {children}
+    </EmailContext.Provider>
+  );
+};
+
+export const useEmail = (): EmailContextValue => {
+  const context = useContext(EmailContext);
+  if (context === undefined) {
+    throw new Error('useEmail must be used within an EmailProvider');
+  }
+  return context;
+};

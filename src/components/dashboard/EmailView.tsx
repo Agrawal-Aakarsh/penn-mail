@@ -2,9 +2,11 @@ import { EmailMessage } from "@/lib/gmail"
 import DOMPurify from 'dompurify'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from "@/components/ui/button"
-import { Reply } from "lucide-react"
+import { Reply, Archive, Book, Check } from "lucide-react"
 import { EmailComposer } from "./EmailComposer"
 import { EmailAddress } from "@/components/ui/EmailAddress"
+import { useEmail } from "@/lib/EmailContext"
+import { ClassificationDetails } from "./ClassificationDetails"
 
 interface EmailViewProps {
   email?: EmailMessage
@@ -15,6 +17,13 @@ interface EmailViewProps {
 export function EmailView({ email, onSend, onCompose }: EmailViewProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isReplying, setIsReplying] = useState(false);
+  const [classification, setClassification] = useState<{
+    category: 'reply' | 'read' | 'archive';
+    confidence: number;
+    reasoning?: string;
+  } | null>(null);
+  
+  const { classifyCurrentEmail } = useEmail();
 
   useEffect(() => {
     if (contentRef.current) {
@@ -34,6 +43,9 @@ export function EmailView({ email, onSend, onCompose }: EmailViewProps) {
         link.rel = 'noopener noreferrer';
       }
     }
+    
+    // Reset classification when email changes
+    setClassification(null);
   }, [email?.body]);
 
   if (!email) {
@@ -62,22 +74,60 @@ export function EmailView({ email, onSend, onCompose }: EmailViewProps) {
   const handleCloseReply = () => {
     setIsReplying(false);
   };
+  
+  const handleClassify = async () => {
+    try {
+      const result = await classifyCurrentEmail();
+      if (result) {
+        setClassification({
+          category: result.category,
+          confidence: result.confidence,
+          reasoning: result.reasoning
+        });
+      }
+    } catch (error) {
+      console.error('Error classifying email:', error);
+    }
+  };
+
+  const ActionButton = ({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) => (
+    <Button variant="outline" size="sm" onClick={onClick} className="ml-2">
+      {icon}
+      <span className="ml-2">{label}</span>
+    </Button>
+  );
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex-none p-8 border-b bg-white">
         <div className="flex justify-between items-start mb-4">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-900">{email.subject}</h1>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleReply}
-            className="ml-4"
-          >
-            <Reply className="h-4 w-4 mr-2" />
-            Reply
-          </Button>
+          <div className="flex">
+            <ActionButton 
+              icon={<Reply className="h-4 w-4" />}
+              label="Reply"
+              onClick={handleReply}
+            />
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleClassify}
+              className="ml-2"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Classify
+            </Button>
+          </div>
         </div>
+        
+        {classification && (
+          <ClassificationDetails
+            category={classification.category}
+            confidence={classification.confidence}
+            reasoning={classification.reasoning}
+          />
+        )}
+        
         <div className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-600">
           <div className="flex items-center gap-2">
             <span className="font-medium w-12">From:</span>
@@ -122,4 +172,4 @@ export function EmailView({ email, onSend, onCompose }: EmailViewProps) {
       )}
     </div>
   )
-} 
+}
