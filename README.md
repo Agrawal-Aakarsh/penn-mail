@@ -1,6 +1,8 @@
 # PennMail
 
-Redifing email for Penn Students.
+Redefining email for Penn Students.
+
+PennMail is a powerful email assistant that helps Penn students stay organized and never miss important information. The app intelligently sorts your inbox into actionable categories: "Read" for emails that need your attention but aren't urgent, "Do" for emails requiring immediate response or action, and "Archive" for emails that can be filed away. Beyond basic organization, PennMail categorizes your emails into three key buckets: Classes (course-related communications, assignments, and announcements), Clubs (student organization updates and events), and Career (internship opportunities, job postings, and professional development events). The app leverages AI to generate concise bullet-point summaries of your emails, highlighting key takeaways and deadlines. Most importantly, PennMail automatically syncs important dates and deadlines to your Google Calendar, ensuring you never miss an info session, assignment deadline, or club meeting. This smart integration of email management, content categorization, AI-powered summaries, and calendar synchronization makes PennMail an essential tool for busy Penn students to stay on top of their academic and extracurricular commitments.
 
 ## Features
 
