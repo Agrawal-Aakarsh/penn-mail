@@ -59,7 +59,7 @@ class ClassificationService {
     }
   }
   
-  async classifyBatch(accessToken: string, emailIds: string[]): Promise<ClassificationResult[]> {
+  async classifyBatch(accessToken: string, emailIds: string[], applyLabels: boolean = true): Promise<ClassificationResult[]> {
     try {
       const gmail = this.getGmailClient(accessToken);
       
@@ -99,10 +99,12 @@ class ClassificationService {
       const validEmailsData = emailsData.filter(email => email.content);
       const classifications = await openAiService.batchClassifyEmails(validEmailsData);
       
-      // 3. Apply classifications
-      await Promise.all(classifications.map(classification => 
-        this.applyClassification(accessToken, classification)
-      ));
+      // 3. Apply classifications if requested
+      if (applyLabels) {
+        await Promise.all(classifications.map(classification => 
+          this.applyClassification(accessToken, classification)
+        ));
+      }
       
       return classifications;
     } catch (error) {
@@ -134,88 +136,8 @@ class ClassificationService {
   }
   
   private async applyClassification(accessToken: string, classification: ClassificationResult): Promise<void> {
-    const gmail = this.getGmailClient(accessToken);
-    
-    switch (classification.category) {
-      case 'reply':
-        // Add custom label "NEEDS_REPLY"
-        await this.ensureLabelExists(gmail, 'NEEDS_REPLY', 'Needs Reply');
-        await this.addLabel(gmail, classification.emailId, 'NEEDS_REPLY');
-        break;
-        
-      case 'read':
-        // Add custom label "TO_READ"
-        await this.ensureLabelExists(gmail, 'TO_READ', 'To Read');
-        await this.addLabel(gmail, classification.emailId, 'TO_READ');
-        break;
-        
-      case 'archive':
-        // Remove from inbox (archive)
-        await this.removeLabel(gmail, classification.emailId, 'INBOX');
-        // Add custom label "ARCHIVED_BY_AI"
-        await this.ensureLabelExists(gmail, 'ARCHIVED_BY_AI', 'Archived by AI');
-        await this.addLabel(gmail, classification.emailId, 'ARCHIVED_BY_AI');
-        break;
-    }
-  }
-  
-  private async ensureLabelExists(gmail: any, labelId: string, labelName: string): Promise<string> {
-    try {
-      // Check if label already exists
-      const response = await gmail.users.labels.list({ userId: 'me' });
-      const existingLabel = response.data.labels.find((label: any) => 
-        label.name === labelName || label.id === labelId
-      );
-      
-      if (existingLabel) {
-        return existingLabel.id;
-      }
-      
-      // Create label if it doesn't exist
-      const createResponse = await gmail.users.labels.create({
-        userId: 'me',
-        requestBody: {
-          name: labelName,
-          labelListVisibility: 'labelShow',
-          messageListVisibility: 'show'
-        }
-      });
-      
-      return createResponse.data.id;
-    } catch (error) {
-      console.error(`Error ensuring label ${labelName} exists:`, error);
-      throw error;
-    }
-  }
-  
-  private async addLabel(gmail: any, emailId: string, labelId: string): Promise<void> {
-    try {
-      await gmail.users.messages.modify({
-        userId: 'me',
-        id: emailId,
-        requestBody: {
-          addLabelIds: [labelId]
-        }
-      });
-    } catch (error) {
-      console.error(`Error adding label ${labelId} to email ${emailId}:`, error);
-      throw error;
-    }
-  }
-  
-  private async removeLabel(gmail: any, emailId: string, labelId: string): Promise<void> {
-    try {
-      await gmail.users.messages.modify({
-        userId: 'me',
-        id: emailId,
-        requestBody: {
-          removeLabelIds: [labelId]
-        }
-      });
-    } catch (error) {
-      console.error(`Error removing label ${labelId} from email ${emailId}:`, error);
-      throw error;
-    }
+    // No longer modifying Gmail labels, just returning the classification
+    return;
   }
 }
 

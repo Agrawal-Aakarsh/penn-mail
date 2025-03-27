@@ -1,5 +1,6 @@
 export interface EmailMessage {
   id: string;
+  emailId: string;
   threadId: string;
   subject: string;
   from: string;
@@ -31,21 +32,50 @@ export default class GmailService {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    console.log('Making request to:', `${this.baseUrl}/api${endpoint}`);
-    const response = await fetch(`${this.baseUrl}/api${endpoint}`, {
-      ...options,
+    const url = `${this.baseUrl}/api${endpoint}`;
+    console.log('[DEBUG] Making request to:', url);
+    console.log('[DEBUG] Request options:', {
+      method: options.method || 'GET',
       headers: {
         ...options.headers,
-        'Authorization': `Bearer ${this.accessToken}`,
-      },
+        'Authorization': 'Bearer [REDACTED]'
+      }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
-    }
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Authorization': `Bearer ${this.accessToken}`,
+        },
+      });
 
-    return response.json();
+      console.log('[DEBUG] Response status:', response.status);
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage += `, details: ${JSON.stringify(errorData)}`;
+        } catch {
+          const errorText = await response.text();
+          errorMessage += `, details: ${errorText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log('[DEBUG] Response data:', {
+        dataType: typeof data,
+        hasEmails: Array.isArray(data?.emails),
+        emailCount: Array.isArray(data?.emails) ? data.emails.length : 0
+      });
+      return data;
+    } catch (error) {
+      console.error('[DEBUG] Request failed:', error);
+      throw error;
+    }
   }
 
   async listEmails(

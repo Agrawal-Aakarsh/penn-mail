@@ -17,14 +17,16 @@ interface SingleClassificationResponse {
   classification: ClassificationResult;
 }
 
+const BASE_URL = 'http://localhost:3001';
+
 export async function classifyEmail(emailId: string): Promise<SingleClassificationResponse> {
   try {
-    const accessToken = localStorage.getItem('gmailAccessToken');
+    const accessToken = localStorage.getItem('gmail_access_token');
     if (!accessToken) {
       throw new Error('No access token found');
     }
 
-    const response = await fetch(`/api/classify/email/${emailId}`, {
+    const response = await fetch(`${BASE_URL}/api/classify/email/${emailId}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -46,12 +48,12 @@ export async function classifyEmail(emailId: string): Promise<SingleClassificati
 
 export async function classifyBatch(emailIds: string[]): Promise<BatchClassificationResponse> {
   try {
-    const accessToken = localStorage.getItem('gmailAccessToken');
+    const accessToken = localStorage.getItem('gmail_access_token');
     if (!accessToken) {
       throw new Error('No access token found');
     }
 
-    const response = await fetch('/api/classify/batch', {
+    const response = await fetch(`${BASE_URL}/api/classify/batch`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -74,12 +76,12 @@ export async function classifyBatch(emailIds: string[]): Promise<BatchClassifica
 
 export async function classifyInbox(maxResults: number = 10): Promise<BatchClassificationResponse> {
   try {
-    const accessToken = localStorage.getItem('gmailAccessToken');
+    const accessToken = localStorage.getItem('gmail_access_token');
     if (!accessToken) {
       throw new Error('No access token found');
     }
 
-    const response = await fetch('/api/classify/inbox', {
+    const response = await fetch(`${BASE_URL}/api/classify/inbox`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -102,19 +104,13 @@ export async function classifyInbox(maxResults: number = 10): Promise<BatchClass
 
 export async function getClassifiedEmails(category: 'reply' | 'read' | 'archive'): Promise<EmailMessage[]> {
   try {
-    const accessToken = localStorage.getItem('gmailAccessToken');
+    const accessToken = localStorage.getItem('gmail_access_token');
     if (!accessToken) {
       throw new Error('No access token found');
     }
 
-    // Map category to label name
-    const labelMap = {
-      'reply': 'NEEDS_REPLY',
-      'read': 'TO_READ',
-      'archive': 'ARCHIVED_BY_AI'
-    };
-
-    const response = await fetch(`/api/emails?label=${labelMap[category]}`, {
+    // Get all inbox emails
+    const response = await fetch(`${BASE_URL}/api/emails?label=inbox`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -124,11 +120,37 @@ export async function getClassifiedEmails(category: 'reply' | 'read' | 'archive'
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error || `Failed to get ${category} emails`);
+      throw new Error(errorData.error || `Failed to get inbox emails`);
     }
 
     const data = await response.json();
-    return data.emails || [];
+    const inboxEmails: EmailMessage[] = data.emails || [];
+
+    // Get classifications for all emails without applying labels
+    const response2 = await fetch(`${BASE_URL}/api/classify/batch`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        emailIds: inboxEmails.map(email => email.id),
+        applyLabels: false // Add this flag to indicate we don't want to apply labels
+      }),
+    });
+
+    if (!response2.ok) {
+      const errorData = await response2.json();
+      throw new Error(errorData.error || 'Failed to get classifications');
+    }
+
+    const classifications = await response2.json();
+
+    // Filter emails based on the requested category
+    return inboxEmails.filter((email: EmailMessage) => {
+      const classification = classifications.classifications.find((c: ClassificationResult) => c.emailId === email.id);
+      return classification?.category === category;
+    });
   } catch (error) {
     console.error(`Error fetching ${category} emails:`, error);
     throw error;

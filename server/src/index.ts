@@ -402,6 +402,7 @@ const emailsHandler: RequestHandler = async (req, res, next) => {
 
           const email = {
             id: message.id || '',
+            emailId: message.id || '',
             threadId: message.threadId || '',
             subject,
             from,

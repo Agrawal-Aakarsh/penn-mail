@@ -1,19 +1,38 @@
 // src/routes/classificationRoutes.ts
-import express, { Request, Response } from 'express';
+import express, { Request, Response, RequestHandler } from 'express';
 import classificationService from '../services/classificationService';
 
 const router = express.Router();
+
+interface ClassifyEmailRequest extends Request {
+  params: {
+    id: string;
+  };
+}
+
+interface BatchClassifyRequest extends Request {
+  body: {
+    emailIds: string[];
+  };
+}
+
+interface ClassifyInboxRequest extends Request {
+  body: {
+    maxResults?: number;
+  };
+}
 
 /**
  * @route POST /api/classify/email/:id
  * @desc Classify a single email
  * @access Private
  */
-router.post('/email/:id', async (req: Request, res: Response) => {
+const classifyEmailHandler: RequestHandler = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
+      res.status(401).json({ error: 'No token provided' });
+      return;
     }
 
     const accessToken = authHeader.split(' ')[1];
@@ -33,29 +52,31 @@ router.post('/email/:id', async (req: Request, res: Response) => {
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-});
+};
 
 /**
  * @route POST /api/classify/batch
  * @desc Classify multiple emails at once
  * @access Private
  */
-router.post('/batch', async (req: Request, res: Response) => {
+const batchClassifyHandler: RequestHandler = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
+      res.status(401).json({ error: 'No token provided' });
+      return;
     }
 
     const accessToken = authHeader.split(' ')[1];
-    const { emailIds } = req.body;
+    const { emailIds, applyLabels = true } = req.body;
     
     if (!Array.isArray(emailIds) || emailIds.length === 0) {
-      return res.status(400).json({ error: 'Email IDs array is required' });
+      res.status(400).json({ error: 'Email IDs array is required' });
+      return;
     }
     
-    console.log(`[DEBUG] Batch classifying ${emailIds.length} emails`);
-    const results = await classificationService.classifyBatch(accessToken, emailIds);
+    console.log(`[DEBUG] Batch classifying ${emailIds.length} emails, applyLabels: ${applyLabels}`);
+    const results = await classificationService.classifyBatch(accessToken, emailIds, applyLabels);
     
     res.json({
       success: true,
@@ -68,18 +89,19 @@ router.post('/batch', async (req: Request, res: Response) => {
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-});
+};
 
 /**
  * @route POST /api/classify/inbox
  * @desc Classify all unread emails in inbox
  * @access Private
  */
-router.post('/inbox', async (req: Request, res: Response) => {
+const classifyInboxHandler: RequestHandler = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
+      res.status(401).json({ error: 'No token provided' });
+      return;
     }
 
     const accessToken = authHeader.split(' ')[1];
@@ -97,11 +119,12 @@ router.post('/inbox', async (req: Request, res: Response) => {
     });
     
     if (!response.data.messages || response.data.messages.length === 0) {
-      return res.json({
+      res.json({
         success: true,
         message: 'No unread emails found',
         classifications: []
       });
+      return;
     }
     
     const emailIds = response.data.messages.map((msg: any) => msg.id);
@@ -120,6 +143,11 @@ router.post('/inbox', async (req: Request, res: Response) => {
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-});
+};
+
+// Mount routes
+router.post('/email/:id', classifyEmailHandler);
+router.post('/batch', batchClassifyHandler);
+router.post('/inbox', classifyInboxHandler);
 
 export default router;

@@ -23,7 +23,7 @@ class OpenAIService {
     try {
       const prompt = `
 Please analyze the following email and classify it into one of these categories:
-- "reply": Email requires a response
+- "reply": Email requires a response or contains the word reply anywhere in the email
 - "read": Email should be read but doesn't need immediate response
 - "archive": Email can be archived without reading in detail
 
@@ -33,8 +33,7 @@ ${emailContent}
 Respond with a JSON object containing:
 {
   "category": "reply" or "read" or "archive",
-  "confidence": a number between 0 and 1,
-  "reasoning": brief explanation for the classification
+ 
 }
       `;
       

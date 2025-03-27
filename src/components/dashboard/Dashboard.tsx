@@ -21,7 +21,12 @@ export function Dashboard() {
     setSelectedEmail, 
     refreshEmails, 
     gmailService,
-    refreshClassifiedEmails 
+    isClassifying,
+    classifiedEmails,
+    classifyCurrentEmail,
+    classifySelectedEmails,
+    classifyInbox,
+    refreshClassifiedEmails
   } = useEmail();
   
   const [activeTab, setActiveTab] = useState<Tab>("reply")
@@ -153,7 +158,8 @@ export function Dashboard() {
   const getCurrentEmails = () => {
     // If in inbox view but with one of the classification tabs active
     if (currentView === 'inbox' && (activeTab === 'reply' || activeTab === 'read' || activeTab === 'archive')) {
-      return emails[activeTab];
+      // Return the classified emails for the current tab
+      return classifiedEmails[activeTab];
     }
     
     // Otherwise use the standard views
@@ -174,7 +180,8 @@ export function Dashboard() {
     setSelectedEmail(null);
     setViewState("composing");
     setDraftToEdit({
-      id: '',
+      id: `draft-${Date.now()}`,
+      emailId: `draft-${Date.now()}`,
       threadId: '',
       subject: '',
       from: '',

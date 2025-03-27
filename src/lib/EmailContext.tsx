@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import GmailService, { EmailMessage } from './gmail';
 import { useClassifier } from '@/hooks/useClassifier';
 
@@ -19,6 +19,11 @@ interface EmailContextValue {
   gmailService: GmailService;
   // Classifier specific methods
   isClassifying: boolean;
+  classifiedEmails: {
+    reply: EmailMessage[];
+    read: EmailMessage[];
+    archive: EmailMessage[];
+  };
   classifyCurrentEmail: () => Promise<any>;
   classifySelectedEmails: (emailIds: string[]) => Promise<any>;
   classifyInbox: (maxResults?: number) => Promise<any>;
@@ -27,12 +32,12 @@ interface EmailContextValue {
 
 interface EmailProviderProps {
   children: ReactNode;
-  accessToken?: string; // OAuth access token for GmailService
+  accessToken: string; // Required OAuth access token
 }
 
 const EmailContext = createContext<EmailContextValue | undefined>(undefined);
 
-export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessToken = '' }) => {
+export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessToken }) => {
   const [emails, setEmails] = useState<{
     inbox: EmailMessage[];
     sent: EmailMessage[];
@@ -65,24 +70,33 @@ export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessTo
 
   useEffect(() => {
     // Update emails state when classified emails change
-    setEmails(prev => ({
-      ...prev,
-      reply: classifiedEmails.reply,
-      read: classifiedEmails.read,
-      archive: classifiedEmails.archive
-    }));
+    console.log('[DEBUG] Classified emails updated:', classifiedEmails);
+    setEmails(prev => {
+      const newState = {
+        ...prev,
+        reply: classifiedEmails.reply,
+        read: classifiedEmails.read,
+        archive: classifiedEmails.archive
+      };
+      console.log('[DEBUG] New email state:', newState);
+      return newState;
+    });
   }, [classifiedEmails]);
 
   useEffect(() => {
     const init = async () => {
       try {
         setLoading(true);
+        setError(null);
         
         // Initialize with inbox emails
         await refreshEmails('inbox');
         
-        // Also load classified emails
-        await refreshAllCategories();
+        // Load classified emails after inbox is loaded
+        if (refreshAllCategories) {
+          console.log('[DEBUG] Loading initial classified emails');
+          await refreshAllCategories();
+        }
         
         setLoading(false);
       } catch (error) {
@@ -92,40 +106,51 @@ export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessTo
       }
     };
 
-    init();
-  }, []);
+    if (accessToken) {
+      init();
+    }
+  }, [accessToken, refreshAllCategories]);
 
   const refreshEmails = async (label: string, options?: { pageToken?: string; search?: string }) => {
     try {
       setLoading(true);
       setError(null);
       
-      // Fix: Use the correct method (listEmails) from GmailService
+      console.log('[DEBUG] Refreshing emails:', { label, options });
+      
       const validLabel = label === 'inbox' || label === 'sent' || label === 'draft' 
         ? (label as 'inbox' | 'sent' | 'draft') 
         : 'inbox';
       
       const response = await gmailService.listEmails(validLabel, options);
+      console.log('[DEBUG] Email response:', response);
       
-      const newEmails = response.emails || [];
+      if (!response || !response.emails) {
+        throw new Error('No emails returned from server');
+      }
+      
+      const newEmails = response.emails;
+      console.log('[DEBUG] New emails:', newEmails.length);
 
       // Update only the appropriate category
       setEmails(prev => {
+        const updated = { ...prev };
         if (label === 'inbox') {
-          return { ...prev, inbox: options?.pageToken ? [...prev.inbox, ...newEmails] : newEmails };
+          updated.inbox = options?.pageToken ? [...prev.inbox, ...newEmails] : newEmails;
         } else if (label === 'sent') {
-          return { ...prev, sent: options?.pageToken ? [...prev.sent, ...newEmails] : newEmails };
+          updated.sent = options?.pageToken ? [...prev.sent, ...newEmails] : newEmails;
         } else if (label === 'draft') {
-          return { ...prev, drafts: options?.pageToken ? [...prev.drafts, ...newEmails] : newEmails };
+          updated.drafts = options?.pageToken ? [...prev.drafts, ...newEmails] : newEmails;
         }
-        return prev;
+        return updated;
       });
       
       return response;
     } catch (error) {
-      console.error('Error refreshing emails:', error);
-      setError('Failed to refresh emails');
-      return null;
+      console.error('[DEBUG] Error refreshing emails:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to refresh emails';
+      setError(errorMessage);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -134,22 +159,42 @@ export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessTo
   // Classifier specific methods
   const classifyCurrentEmail = async () => {
     if (!selectedEmail) {
+      console.warn('[DEBUG] No email selected for classification');
       return null;
     }
-    return await classifyEmail(selectedEmail.id);
+    console.log('[DEBUG] Classifying current email:', selectedEmail.id);
+    const result = await classifyEmail(selectedEmail.id);
+    await refreshAllCategories();
+    return result;
   };
 
   const classifySelectedEmails = async (emailIds: string[]) => {
-    return await classifyBatch(emailIds);
+    console.log('[DEBUG] Classifying selected emails:', emailIds);
+    const result = await classifyBatch(emailIds);
+    await refreshAllCategories();
+    return result;
   };
 
   const classifyInbox = async (maxResults: number = 10) => {
-    return await classifyInboxEmails(maxResults);
+    console.log('[DEBUG] Classifying inbox with maxResults:', maxResults);
+    const result = await classifyInboxEmails(maxResults);
+    await refreshAllCategories();
+    return result;
   };
 
-  const refreshClassifiedEmails = async () => {
-    await refreshAllCategories();
-  };
+  const refreshClassifiedEmails = useCallback(async () => {
+    if (!refreshAllCategories) {
+      console.warn('[DEBUG] refreshAllCategories is not available');
+      return;
+    }
+    console.log('[DEBUG] Refreshing classified emails');
+    try {
+      await refreshAllCategories();
+    } catch (error) {
+      console.error('Error refreshing classified emails:', error);
+      throw error;
+    }
+  }, [refreshAllCategories]);
 
   return (
     <EmailContext.Provider
@@ -163,6 +208,7 @@ export const EmailProvider: React.FC<EmailProviderProps> = ({ children, accessTo
         gmailService,
         // Classifier methods
         isClassifying,
+        classifiedEmails,
         classifyCurrentEmail,
         classifySelectedEmails,
         classifyInbox,
