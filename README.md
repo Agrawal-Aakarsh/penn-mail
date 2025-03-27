@@ -41,10 +41,17 @@ PennMail is a powerful email assistant that helps Penn students stay organized a
 
 4. Start the development server:
    ```bash
+   cd server
    npm run dev
    ```
 
-5. Open your browser and navigate to `http://localhost:5173`
+5. Start the frontend:
+   ```bash
+   cd penn-mail
+   npm run dev
+   ```
+
+6. Open your browser and navigate to `http://localhost:5173`
 
 ## Project Structure
 
